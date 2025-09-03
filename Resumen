@@ -29,9 +29,11 @@ En las aplicaciones web tradicionales, que interactúan con el usuario mediante 
 2. Estrategias
 Las estrategias se encargan de autenticar las solicitudes, lo cual se logra mediante la implementación de un mecanismo de autenticación. Los mecanismos de autenticación definen cómo codificar una credencial, como una contraseña o una aserción de un proveedor de identidad (IdP), en una solicitud. También especifican el procedimiento necesario para verificar dicha credencial. Si la credencial se verifica correctamente, la solicitud se autentica.
 Existe una amplia variedad de mecanismos de autenticación y, por consiguiente, de estrategias. Las estrategias se distribuyen en paquetes separados que deben instalarse, configurarse y registrarse.
+
 - Instalación
 Por ejemplo, el siguiente comando instalará passport-local, un paquete que proporciona una estrategia para autenticarse con un nombre de usuario y una contraseña:
 $ npm install passport-local
+
 - Configuración
 Una vez instalado el paquete, es necesario configurar la estrategia. La configuración varía según el mecanismo de autenticación, por lo que se recomienda consultar la documentación específica de cada estrategia. Dicho esto, existen patrones comunes que se encuentran en muchas estrategias.
 El siguiente código es un ejemplo que configura LocalStrategy:
@@ -62,6 +64,60 @@ Si la credencial no pertenece a un usuario conocido o no es válida, la función
 return cb(null, false);
 Si ocurre un error, como que la base de datos no esté disponible, se llama a la devolución de llamada con un error, en el estilo idiomático de Node.js.
 return cb(err);
+
+-Registro
+Con la estrategia configurada, se registra llamando .use():
+passport.use(strategy);
+Todas las estrategias tienen un nombre que, por convención, corresponde al nombre del paquete según el patrón passport-{name}. Por ejemplo, la LocalStrategy configurada anteriormente se llama local, ya que se distribuye en el paquete passport-local.
+Una vez registrada, la estrategia puede emplearse para autenticar una solicitud pasando su nombre como primer argumento al middleware passport.authenticate():
+app.post('/login/password',
+  passport.authenticate('local', { failureRedirect: '/login', failureMessage: true }),
+  function(req, res) {
+    res.redirect('/~' + req.user.username);
+  });
+
+3. Sesiones
+Una aplicación web necesita la capacidad de identificar a los usuarios mientras navegan entre páginas. Esta serie de solicitudes y respuestas, cada una asociada al mismo usuario, se conoce como sesión.
+HTTP es un protocolo sin estado, lo que significa que cada solicitud a una aplicación puede interpretarse de forma aislada, sin contexto de solicitudes anteriores. Esto supone un reto para las aplicaciones web con usuarios conectados, ya que es necesario recordar al usuario autenticado en las solicitudes posteriores mientras navegan por la aplicación.
+Para resolver este desafío, las aplicaciones web utilizan sesiones, que permiten mantener el estado entre el servidor de aplicaciones y el navegador del usuario. Una sesión se establece mediante la instalación de una cookie HTTP en el navegador, que este transmite al servidor en cada solicitud. El servidor utiliza el valor de la cookie para recuperar la información que necesita en múltiples solicitudes. En efecto, esto crea un protocolo con estado sobre HTTP.
+Si bien las sesiones se utilizan para mantener el estado de autenticación, las aplicaciones también pueden usarlas para mantener otros estados no relacionados con la autenticación. Passport está cuidadosamente diseñado para aislar el estado de autenticación, conocido como sesión de inicio de sesión, de otros estados que puedan almacenarse en la sesión.
+Las aplicaciones deben inicializar la compatibilidad con sesiones para poder usar las sesiones de inicio de sesión. En una aplicación Express, la compatibilidad con sesiones se añade mediante el middleware express-session.
+var session = require('express-session');
+app.use(session({
+  secret: 'keyboard cat',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: true }
+}));
+Para mantener una sesión iniciada, Passport serializa y deserializa la información del usuario que entra y sale de la sesión. La información almacenada la determina la aplicación, que proporciona las funciones serializeUser y deserializeUser.
+passport.serializeUser(function(user, cb) {
+  process.nextTick(function() {
+    return cb(null, {
+      id: user.id,
+      username: user.username,
+      picture: user.picture
+    });
+  });
+});
+
+passport.deserializeUser(function(user, cb) {
+  process.nextTick(function() {
+    return cb(null, user);
+  });
+});
+Una sesión se establece cuando un usuario se autentica correctamente con una credencial. La siguiente ruta autenticará al usuario con nombre de usuario y contraseña. Si la verificación es correcta, Passport llamará a la función serializeUser, que en el ejemplo anterior almacena el ID, el nombre de usuario y la foto del usuario. No se almacena ninguna otra propiedad del usuario, como la dirección o la fecha de nacimiento.
+app.post('/login/password',
+  passport.authenticate('local', { failureRedirect: '/login', failureMessage: true }),
+  function(req, res) {
+    res.redirect('/~' + req.user.username);
+  });
+A medida que el usuario navega de una página a otra, la sesión se puede autenticar mediante la estrategia de sesión integrada. Dado que una sesión autenticada suele ser necesaria para la mayoría de las rutas de una aplicación, es común utilizarla como middleware a nivel de aplicación, después del middleware de sesión.
+app.use(session(/* ... */);
+app.use(passport.authenticate('session'));
+ó:
+app.use(session(/* ... */);
+app.use(passport.session());
+Cuando se autentica la sesión, Passport llamará a la función deserializeUser, que, en el ejemplo anterior, genera el ID de usuario, el nombre de usuario y la imagen previamente almacenados. La propiedad req.user se establece entonces con la información generada.
 
 
 
